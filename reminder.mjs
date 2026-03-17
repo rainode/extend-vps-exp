@@ -1,36 +1,35 @@
-import puppeteer from 'puppeteer'
+import { rename, rm } from 'node:fs/promises'
 import { setTimeout } from 'node:timers/promises'
+import { chromium } from 'patchright'
 
 const args = ['--no-sandbox', '--disable-setuid-sandbox']
+let proxy
 if (process.env.PROXY_SERVER) {
     const proxy_url = new URL(process.env.PROXY_SERVER)
-    proxy_url.username = ''
-    proxy_url.password = ''
-    args.push(`--proxy-server=${proxy_url}`.replace(/\/$/, ''))
+    proxy = {
+        server: `${proxy_url.protocol}//${proxy_url.host}`,
+        username: proxy_url.username || undefined,
+        password: proxy_url.password || undefined,
+    }
 }
 
-const browser = await puppeteer.launch({
-    defaultViewport: { width: 1080, height: 1024 },
+const browser = await chromium.launch({
     args,
+    proxy,
 })
-const [page] = await browser.pages()
-const userAgent = await browser.userAgent()
-await page.setUserAgent(userAgent.replace('Headless', ''))
-const recorder = await page.screencast({ path: 'recording.webm' })
+const context = await browser.newContext({
+    viewport: { width: 1080, height: 1024 },
+    recordVideo: { dir: '.', size: { width: 1080, height: 1024 } },
+})
+const page = await context.newPage()
+const video = page.video()
 
 try {
-    if (process.env.PROXY_SERVER) {
-        const { username, password } = new URL(process.env.PROXY_SERVER)
-        if (username && password) {
-            await page.authenticate({ username, password })
-        }
-    }
-
-    await page.goto('https://secure.xserver.ne.jp/xapanel/login/xvps/', { waitUntil: 'networkidle2' })
+    await page.goto('https://secure.xserver.ne.jp/xapanel/login/xvps/', { waitUntil: 'networkidle' })
     await page.locator('#memberid').fill(process.env.EMAIL)
     await page.locator('#user_password').fill(process.env.PASSWORD)
     await page.locator('text=ログインする').click()
-    await page.waitForNavigation({ waitUntil: 'networkidle2' })
+    await page.waitForNavigation({ waitUntil: 'networkidle' })
     const expireDate = await page.$eval('tr:has(.freeServerIco) .contract__term', p => p.textContent)
     const tomorrow = new Date(Date.now() + 86400000).toLocaleDateString('sv', { timeZone: 'Asia/Tokyo' })
     console.log('expireDate', expireDate, 'tomorrow', tomorrow, expireDate === tomorrow)
@@ -43,6 +42,10 @@ try {
     console.error(e)
 } finally {
     await setTimeout(5000)
-    await recorder.stop()
+    await context.close()
+    if (video) {
+        await rm('recording.webm', { force: true })
+        await rename(await video.path(), 'recording.webm')
+    }
     await browser.close()
 }

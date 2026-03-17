@@ -17,6 +17,13 @@ https://motoki-design.co.jp/wordpress/xserver-vps-auto-renew/
 
 如果不起作用，请设置 GitHub Actions 的 Secrets 环境变量。
 
+依存を手元で入れる場合は `patchright` を使います。
+
+```bash
+npm i patchright
+npx patchright install chromium
+```
+
 ```env
 EMAIL=your@gmail.com
 PASSWORD=yourpassword
